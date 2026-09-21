@@ -130,6 +130,58 @@ class ObsidianClient:
         )
         return self._open(request).decode("utf-8")
 
+    def read_note_metadata(self, path: str) -> dict[str, Any]:
+        """Read note content plus Obsidian-resolved metadata without mutating it."""
+
+        if not path.strip():
+            raise ObsidianError("Note path cannot be empty.")
+        encoded = quote(path.strip("/"), safe="/")
+        request = Request(
+            f"{self.base_url}/vault/{encoded}",
+            method="GET",
+            headers=self._headers(accept="application/vnd.olrapi.note+json"),
+        )
+        value = _decode_json_or_text(self._open(request))
+        if not isinstance(value, dict):
+            raise ObsidianError("Obsidian note metadata response was not a JSON object.")
+        return value
+
+    def walk_markdown_paths(self, path: str = "") -> list[str]:
+        """Recursively enumerate Markdown notes using read-only directory listing."""
+
+        results: list[str] = []
+        stack = [path.strip("/")]
+        ignored_roots = {".obsidian", ".trash", ".git", ".local"}
+
+        while stack:
+            current = stack.pop()
+            listing = self.list_files(current)
+            if isinstance(listing, dict):
+                entries = listing.get("files", [])
+            elif isinstance(listing, list):
+                entries = listing
+            else:
+                raise ObsidianError("Obsidian directory listing had an unexpected format.")
+
+            if not isinstance(entries, list):
+                raise ObsidianError("Obsidian directory listing did not contain a file list.")
+
+            for raw_entry in entries:
+                if not isinstance(raw_entry, str):
+                    continue
+                is_dir = raw_entry.endswith("/")
+                name = raw_entry.rstrip("/")
+                child = f"{current}/{name}".strip("/") if current else name
+                root = child.split("/", 1)[0]
+                if root in ignored_roots:
+                    continue
+                if is_dir:
+                    stack.append(child)
+                elif child.lower().endswith(".md"):
+                    results.append(child)
+
+        return sorted(set(results))
+
     def bootstrap_ca(self, output_path: str | Path) -> Path:
         """Fetch the plugin's local CA once, then use normal TLS verification.
 

@@ -40,6 +40,34 @@ class ObsidianSafetyTests(unittest.TestCase):
         self.assertIn("%E8%8B%B1%E6%96%87", captured["url"])
         self.assertEqual(captured["auth"], "Bearer secret")
 
+    def test_walk_markdown_paths_recurses_and_skips_hidden_vault_data(self) -> None:
+        client = ObsidianClient("https://127.0.0.1:27124", api_key="secret")
+        listings = {
+            "": {"files": ["英文/", "電漿/", ".obsidian/", "root.md", "image.png"]},
+            "英文": {"files": ["Fine.md"]},
+            "電漿": {"files": ["RF/", "Ion Decay.md"]},
+            "電漿/RF": {"files": ["Pulse.md"]},
+        }
+
+        client.list_files = lambda path="": listings[path]
+        self.assertEqual(
+            client.walk_markdown_paths(),
+            ["root.md", "英文/Fine.md", "電漿/Ion Decay.md", "電漿/RF/Pulse.md"],
+        )
+
+    def test_read_note_metadata_requests_structured_note_json(self) -> None:
+        client = ObsidianClient("https://127.0.0.1:27124", api_key="secret")
+        captured = {}
+
+        def fake_open(request):
+            captured["accept"] = request.get_header("Accept")
+            return b'{"content":"hello","tags":[],"frontmatter":{},"stat":{},"path":"A.md","links":[],"backlinks":[],"unresolvedLinks":[]}'
+
+        client._open = fake_open
+        value = client.read_note_metadata("A.md")
+        self.assertEqual(value["content"], "hello")
+        self.assertEqual(captured["accept"], "application/vnd.olrapi.note+json")
+
     def test_search_is_read_semantics_only(self) -> None:
         client = ObsidianClient("https://127.0.0.1:27124", api_key="secret")
         captured = {}
