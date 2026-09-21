@@ -1,12 +1,12 @@
 # Atlas Core — Current Codex Task
 
-## Task: Semantic adjudication of Shadow Mode v0.2.1
+## Task: Build a local semantic gold set for Atlas v0.2.1
 
 Run this task on the user's Windows PC where Obsidian and the existing Atlas local configuration already work.
 
 ### Goal
 
-Measure whether Atlas v0.2.1 is precise enough to move toward Safe Auto linking.
+Create a high-quality local labeled dataset from the user's existing vault so Atlas can learn which candidate relations are actually worth linking.
 
 Do **not** modify the Obsidian vault.
 
@@ -26,79 +26,112 @@ Do **not** modify the Obsidian vault.
    atlas organize --shadow
    ```
 4. Read the local shadow report.
-5. Review **all HIGH-confidence related-note pairs** from the report.
-6. Review **all duplicate candidates**.
-7. Review **all root-level domain suggestions**.
-8. For each reviewed item, use the actual note contents locally when needed, but do not copy note bodies into GitHub, commits, logs, or any public artifact.
+5. Deduplicate directional candidate pairs so each note pair is reviewed once.
+6. Review **all unique related-note candidate pairs**, not only HIGH-confidence pairs.
+7. Review **all duplicate candidates**.
+8. Review **all root-level Unclassified/domain suggestions**.
+9. Use the actual note contents locally when needed.
+10. Save the detailed labeled dataset only to:
+    ```text
+    .local/atlas-semantic-goldset.json
+    ```
 
-### Relationship labels
+### Pair labels
 
-For each HIGH-confidence related pair, assign exactly one:
+For every unique related-note pair assign exactly one:
 
-- `DIRECT_LINK` — the two notes express concepts that should explicitly link to each other.
-- `SAME_TOPIC` — related topic, but a direct backlink would add little value.
-- `DUPLICATE` — materially overlapping notes that may later deserve merge/reconciliation.
-- `REJECT` — similarity is superficial or misleading.
+- `DIRECT_LINK` — a durable explicit link between the two notes would improve navigation or understanding.
+- `SAME_TOPIC` — related topic, but an explicit backlink would add little value.
+- `DUPLICATE` — materially overlapping notes that should later be reconciled.
+- `REJECT` — superficial or misleading similarity.
 
-For each duplicate candidate, assign:
+For `DIRECT_LINK`, also record locally:
+
+- preferred direction: `A_TO_B`, `B_TO_A`, or `BIDIRECTIONAL`
+- a short private reason
+- confidence: `HIGH`, `MEDIUM`, or `LOW`
+
+### Duplicate labels
+
+For each duplicate candidate:
 
 - `TRUE_DUPLICATE`
 - `RELATED_NOT_DUPLICATE`
 - `REJECT`
 
-For each root-level domain suggestion, assign:
+### Domain labels
 
-- `ACCEPT_DOMAIN`
-- `REVIEW_DOMAIN`
-- `REJECT_DOMAIN`
+For each root-level Unclassified note:
 
-### Output
+- choose the best existing domain when clearly supported;
+- otherwise label `KEEP_UNCLASSIFIED`;
+- include local confidence `HIGH`, `MEDIUM`, or `LOW`.
 
-Return a concise Traditional Chinese report containing:
+### Local gold-set schema
 
-1. HIGH-confidence pair count.
-2. Count by relationship label.
-3. Precision estimate:
-   - strict precision = DIRECT_LINK / reviewed HIGH pairs
-   - useful relation precision = (DIRECT_LINK + SAME_TOPIC + DUPLICATE) / reviewed HIGH pairs
-4. The 5 strongest DIRECT_LINK examples, with note titles/paths only and a short reason.
-5. Any HIGH-confidence false positives and why they failed.
-6. Duplicate-candidate adjudication.
-7. Root-level domain suggestion adjudication.
-8. Recommendation:
-   - `NOT_READY`
-   - `READY_FOR_MANUAL_APPROVAL_MODE`
-   - `READY_FOR_SAFE_AUTO_LINKS`
+Store a machine-readable JSON object with:
 
-### Decision rule
+```json
+{
+  "task": "semantic_goldset_v021",
+  "pairs": [
+    {
+      "a": "private local note path",
+      "b": "private local note path",
+      "label": "DIRECT_LINK|SAME_TOPIC|DUPLICATE|REJECT",
+      "direction": "A_TO_B|B_TO_A|BIDIRECTIONAL|null",
+      "confidence": "HIGH|MEDIUM|LOW",
+      "reason": "private local reason"
+    }
+  ],
+  "duplicates": [],
+  "domains": []
+}
+```
 
-Do **not** recommend Safe Auto solely from similarity scores.
+This file is private and MUST stay under `.local/`.
 
-Recommend `READY_FOR_SAFE_AUTO_LINKS` only if:
+### Sanitized GitHub handoff
 
-- at least 80% of reviewed HIGH pairs are `DIRECT_LINK`, and
-- there are no systematic false-positive patterns, and
-- no privacy/security boundary is violated.
+After completing the local gold set, update `docs/CODEX_RESULT.md` with only non-sensitive aggregate results:
 
-Otherwise recommend `READY_FOR_MANUAL_APPROVAL_MODE` or `NOT_READY`.
+1. number of unique pairs reviewed;
+2. counts of DIRECT_LINK / SAME_TOPIC / DUPLICATE / REJECT;
+3. DIRECT_LINK rate overall;
+4. DIRECT_LINK rate among current HIGH-confidence candidates;
+5. counts by confidence;
+6. duplicate adjudication counts;
+7. domain adjudication counts;
+8. whether there are clear systematic false-positive patterns;
+9. recommendation for the next Atlas step.
+
+Do **not** publish note bodies, private reasons, private note paths/titles, API keys, or the gold-set JSON.
+
+### Recommendation choices
+
+Choose one:
+
+- `TUNE_CANDIDATE_GENERATOR`
+- `BUILD_MANUAL_APPROVAL_QUEUE`
+- `BUILD_SAFE_APPLY_ENGINE`
+
+Prefer `BUILD_MANUAL_APPROVAL_QUEUE` unless the labeled gold set shows that automatic direct-link decisions are consistently reliable.
 
 ### Safety constraints
 
-- Vault must remain read-only.
+- Vault remains read-only.
 - No note creation, editing, moving, renaming, merging, or deleting.
-- Never expose `.env`, API keys, local certificates, or note bodies.
-- Do not commit `.local/` reports.
-- Do not push private note content to GitHub.
+- Never expose `.env`, API keys, local certificates, note bodies, private note titles/paths, or employer-confidential information.
+- Do not commit anything under `.local/`.
 - Do not change Atlas code unless a real execution bug blocks the task. If a bug is found, report it first.
-
 
 ## Mandatory handoff
 
-Before finishing this task, follow `docs/CODEX_HANDOFF_PROTOCOL.md`.
+Before finishing, follow `docs/CODEX_HANDOFF_PROTOCOL.md`.
 
 In particular:
 
-- write a sanitized result to `docs/CODEX_RESULT.md`;
+- write the sanitized aggregate result to `docs/CODEX_RESULT.md`;
 - commit and push that result to GitHub so ChatGPT can read it directly;
-- keep detailed/private note evidence under `.local/` only;
-- do not require the user to copy the result manually between Codex and ChatGPT.
+- keep the detailed semantic gold set under `.local/` only;
+- do not require the user to copy results manually between Codex and ChatGPT.
