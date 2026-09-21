@@ -70,8 +70,20 @@ def _note_type(path: str, content: str, frontmatter: dict[str, Any]) -> str:
 
 def _tokenize(title: str, content: str, tags: tuple[str, ...]) -> frozenset[str]:
     text = " ".join([title, *tags, *_HEADING_RE.findall(content), content[:6000]])
-    raw = [m.group(0).lower() for m in _WORD_RE.finditer(text)]
-    tokens = {t for t in raw if len(t) >= 2 and t not in _STOPWORDS}
+    tokens: set[str] = set()
+    for match in _WORD_RE.finditer(text):
+        token = match.group(0).lower()
+        if token in _STOPWORDS or len(token) < 2:
+            continue
+        if re.fullmatch(r"[\u3400-\u9fff]+", token):
+            # Chinese text has no spaces. Character bigrams provide a lightweight,
+            # dependency-free similarity signal without pretending to be a tokenizer.
+            if len(token) == 2:
+                tokens.add(token)
+            else:
+                tokens.update(token[i : i + 2] for i in range(len(token) - 1))
+        else:
+            tokens.add(token)
     return frozenset(tokens)
 
 
