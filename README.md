@@ -65,3 +65,56 @@ You do not need to create a test note. Use any existing note that you are comfor
 ## Security
 
 See `docs/SECURITY.md`. The repository may be public during early development, but the vault, API key, local certificate, personal notes, and any employer-confidential material must remain outside Git.
+
+
+## Phase 2: Knowledge Organizer Shadow Mode
+
+Atlas can now analyze the structure of the existing vault without changing any note.
+
+```powershell
+git pull
+python -m pip install -e .
+atlas organize --shadow
+```
+
+The default report is written only to:
+
+```text
+.local/atlas-shadow-report.json
+```
+
+`.local/` is gitignored. The report contains note paths and structural metadata, but deliberately does **not** copy note bodies.
+
+Shadow Mode currently reports:
+
+- note count by top-level domain
+- inferred note type (Concept / Language / Question / Idea / Hypothesis / Reference)
+- orphan notes with no links or backlinks
+- unresolved wiki links
+- semantically related but currently unlinked notes using a lightweight local similarity signal
+- possible duplicate-note pairs
+- domain membership map
+
+This first organizer is intentionally dependency-free and local. It does not call an external LLM and it does not pretend that structural similarity equals conceptual truth. Its job is to produce a safe map that can be reviewed before Atlas is allowed to write anything.
+
+For a smaller trial run:
+
+```powershell
+atlas organize --shadow --limit 50
+```
+
+To print the full JSON report:
+
+```powershell
+atlas organize --shadow --json
+```
+
+### Automation policy
+
+Atlas will earn write access in stages:
+
+1. **Shadow** — analyze and suggest only.
+2. **Safe Auto** — later, allow narrowly-scoped metadata/backlink updates.
+3. **Approval Required** — moves, renames, merges, deletions, or body rewrites always require explicit approval.
+
+The existing vault does not need to be reorganized manually for Atlas.
