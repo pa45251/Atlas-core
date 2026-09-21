@@ -80,6 +80,48 @@ class OrganizerTests(unittest.TestCase):
         self.assertNotIn("離子衰減可能影響角度分佈", serialized)
         self.assertNotIn("語境決定 fine 的意思", serialized)
 
+    def test_language_folder_wins_over_weak_hypothesis_words(self) -> None:
+        notes = {
+            "英文/Test.md": {
+                "content": "# Test\n這個意思可能是語境造成的",
+                "tags": [],
+                "frontmatter": {},
+                "stat": {"mtime": 1, "size": 10},
+                "links": [],
+                "backlinks": [],
+                "unresolvedLinks": [],
+            }
+        }
+        report = ShadowOrganizer(FakeClient(notes)).scan()
+        self.assertEqual(report["note_types"]["LANGUAGE"], 1)
+        self.assertNotIn("HYPOTHESIS", report["note_types"])
+
+    def test_related_threshold_is_conservative(self) -> None:
+        notes = {
+            "A/one.md": {
+                "content": "# one\nalpha beta gamma delta",
+                "tags": [],
+                "frontmatter": {},
+                "stat": {},
+                "links": [],
+                "backlinks": [],
+                "unresolvedLinks": [],
+            },
+            "A/two.md": {
+                "content": "# two\nalpha beta unrelated",
+                "tags": [],
+                "frontmatter": {},
+                "stat": {},
+                "links": [],
+                "backlinks": [],
+                "unresolvedLinks": [],
+            },
+        }
+        report = ShadowOrganizer(FakeClient(notes)).scan()
+        suggestions = report["related_unlinked_notes"].get("A/one.md", [])
+        for item in suggestions:
+            self.assertGreaterEqual(item["similarity"], 0.35)
+
     def test_limit_is_respected(self) -> None:
         notes = {
             f"Notes/{i}.md": {
