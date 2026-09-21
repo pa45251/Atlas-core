@@ -7,6 +7,7 @@ from typing import Any
 
 from .config import ObsidianSettings
 from .obsidian import ObsidianClient, ObsidianError
+from .organizer import ShadowOrganizer, render_summary, write_local_report
 
 
 def _client() -> tuple[ObsidianClient, ObsidianSettings]:
@@ -67,6 +68,33 @@ def build_parser() -> argparse.ArgumentParser:
     read_parser = commands.add_parser("read", help="Read an existing note")
     read_parser.add_argument("path")
 
+    organize = top.add_parser(
+        "organize",
+        help="Analyze the vault and propose knowledge organization without editing it",
+    )
+    organize.add_argument(
+        "--shadow",
+        action="store_true",
+        required=True,
+        help="Required safety flag: analyze only; never change Obsidian",
+    )
+    organize.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional maximum number of notes to scan",
+    )
+    organize.add_argument(
+        "--output",
+        default=".local/atlas-shadow-report.json",
+        help="Local gitignored JSON report path",
+    )
+    organize.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the full JSON report instead of the concise summary",
+    )
+
     return parser
 
 
@@ -92,6 +120,15 @@ def main() -> int:
             return 0
         if args.area == "obsidian" and args.command == "read":
             _print(client.read_note(args.path))
+            return 0
+        if args.area == "organize":
+            report = ShadowOrganizer(client).scan(limit=args.limit)
+            write_local_report(report, args.output)
+            if args.json:
+                _print(report)
+            else:
+                _print(render_summary(report))
+                _print(f"Local report: {args.output}")
             return 0
 
         parser.error("Unsupported command.")
