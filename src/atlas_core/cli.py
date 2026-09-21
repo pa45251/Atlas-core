@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from typing import Any
 
 from .config import ObsidianSettings
@@ -20,11 +21,31 @@ def _client() -> tuple[ObsidianClient, ObsidianSettings]:
     )
 
 
+def _console_safe_text(text: str, encoding: str | None = None) -> str:
+    encoding = encoding or getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        text.encode(encoding)
+        return text
+    except (LookupError, UnicodeEncodeError):
+        pass
+
+    safe: list[str] = []
+    for char in text:
+        try:
+            char.encode(encoding)
+            safe.append(char)
+        except UnicodeEncodeError:
+            # JSON-style escaping stays ASCII-safe and keeps structured output valid.
+            safe.append(json.dumps(char, ensure_ascii=True)[1:-1])
+    return "".join(safe)
+
+
 def _print(value: Any) -> None:
     if isinstance(value, (dict, list)):
-        print(json.dumps(value, ensure_ascii=False, indent=2))
+        rendered = json.dumps(value, ensure_ascii=False, indent=2)
     else:
-        print(value)
+        rendered = str(value)
+    sys.stdout.write(_console_safe_text(rendered) + "\n")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,7 +79,7 @@ def main() -> int:
 
         if args.area == "obsidian" and args.command == "bootstrap-ca":
             path = client.bootstrap_ca(settings.ca_cert)
-            print(f"Saved local Obsidian CA certificate to: {path}")
+            _print(f"Saved local Obsidian CA certificate to: {path}")
             return 0
         if args.area == "obsidian" and args.command == "status":
             _print(client.status())
@@ -75,7 +96,7 @@ def main() -> int:
 
         parser.error("Unsupported command.")
     except ObsidianError as exc:
-        print(f"Atlas error: {exc}")
+        _print(f"Atlas error: {exc}")
         return 2
 
     return 0
