@@ -54,17 +54,23 @@ def _note_type(path: str, content: str, frontmatter: dict[str, Any]) -> str:
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip().upper().replace(" ", "_")
 
-    probe = (path + "\n" + content[:1200]).lower()
-    rules = (
-        ("HYPOTHESIS", ("hypothesis", "假說", "假設", "推測", "可能是")),
-        ("QUESTION", ("question", "問題", "為什麼", "如何", "？", "?")),
-        ("IDEA", ("idea", "想法", "靈感", "點子")),
-        ("REFERENCE", ("paper", "reference", "文獻", "論文", "source:")),
-        ("LANGUAGE", ("英文", "english", "vocabulary", "grammar", "單字", "片語")),
-    )
-    for kind, cues in rules:
-        if any(cue.lower() in probe for cue in cues):
-            return kind
+    title = _basename(path).lower()
+    top_folder = PurePosixPath(path).parts[0].lower() if len(PurePosixPath(path).parts) > 1 else ""
+    first_heading = (_HEADING_RE.findall(content) or [""])[0].lower()
+    strong_probe = f"{title}\n{first_heading}"
+
+    if top_folder in {"英文", "english"} or any(
+        cue in strong_probe for cue in ("english", "vocabulary", "grammar", "單字", "片語", "字根")
+    ):
+        return "LANGUAGE"
+    if any(cue in strong_probe for cue in ("hypothesis", "假說", "假設：", "假設:")):
+        return "HYPOTHESIS"
+    if any(cue in strong_probe for cue in ("question", "問題", "為什麼", "如何", "？", "?")):
+        return "QUESTION"
+    if any(cue in strong_probe for cue in ("idea", "想法", "靈感", "點子")):
+        return "IDEA"
+    if any(cue in strong_probe for cue in ("paper", "reference", "文獻", "論文")):
+        return "REFERENCE"
     return "CONCEPT"
 
 
@@ -160,11 +166,12 @@ class ShadowOrganizer:
                 if i == j:
                     continue
                 score = _similarity(note, other)
-                if score >= 0.16:
+                relation_threshold = 0.35 if note.domain == other.domain else 0.55
+                if score >= relation_threshold:
                     scored.append((score, other))
                 if i < j:
                     same_title = _normal_title(note.title) == _normal_title(other.title)
-                    if same_title or score >= 0.72:
+                    if same_title or score >= 0.88:
                         duplicate_candidates.append(
                             {
                                 "a": note.path,
@@ -184,12 +191,41 @@ class ShadowOrganizer:
                         "path": other.path,
                         "similarity": round(score, 3),
                         "same_domain": note.domain == other.domain,
+                        "confidence": "HIGH" if score >= 0.65 else "REVIEW",
                     }
                 )
                 if len(suggestions) >= 5:
                     break
             if suggestions:
                 related[note.path] = suggestions
+
+        # Suggest a domain for root-level notes without changing their actual location.
+        domain_token_counts: dict[str, Counter[str]] = defaultdict(Counter)
+        for note in notes:
+            if note.domain != "Unclassified":
+                domain_token_counts[note.domain].update(note.tokens)
+
+        domain_suggestions: dict[str, dict[str, Any]] = {}
+        for note in notes:
+            if note.domain != "Unclassified" or not note.tokens:
+                continue
+            scored_domains: list[tuple[float, str]] = []
+            for domain, counts in domain_token_counts.items():
+                vocab = set(counts)
+                if not vocab:
+                    continue
+                overlap = len(note.tokens & vocab)
+                score = overlap / math.sqrt(len(note.tokens) * len(vocab)) if overlap else 0.0
+                if score > 0:
+                    scored_domains.append((score, domain))
+            scored_domains.sort(reverse=True)
+            if scored_domains:
+                score, domain = scored_domains[0]
+                domain_suggestions[note.path] = {
+                    "suggested_domain": domain,
+                    "confidence": "REVIEW" if score < 0.20 else "HIGH",
+                    "similarity": round(score, 3),
+                }
 
         domains = Counter(n.domain for n in notes)
         types = Counter(n.note_type for n in notes)
@@ -213,6 +249,7 @@ class ShadowOrganizer:
             "unresolved_links": unresolved,
             "related_unlinked_notes": related,
             "duplicate_candidates": duplicate_candidates[:100],
+            "domain_suggestions": domain_suggestions,
             "domain_members": {k: sorted(v) for k, v in sorted(clusters.items())},
             "safety": {
                 "vault_modified": False,
