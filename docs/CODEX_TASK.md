@@ -90,3 +90,15 @@ Otherwise recommend `READY_FOR_MANUAL_APPROVAL_MODE` or `NOT_READY`.
 - Do not commit `.local/` reports.
 - Do not push private note content to GitHub.
 - Do not change Atlas code unless a real execution bug blocks the task. If a bug is found, report it first.
+
+
+## Mandatory handoff
+
+Before finishing this task, follow `docs/CODEX_HANDOFF_PROTOCOL.md`.
+
+In particular:
+
+- write a sanitized result to `docs/CODEX_RESULT.md`;
+- commit and push that result to GitHub so ChatGPT can read it directly;
+- keep detailed/private note evidence under `.local/` only;
+- do not require the user to copy the result manually between Codex and ChatGPT.
